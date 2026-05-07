@@ -1,0 +1,15 @@
+name: VexityChat
+main: so.max1soft.vexitychat.Main
+version: 1
+api-version: 1.16
+description: Vexity.pw | https://t.me/vexityai
+author: SoMax1soft
+depend:
+  - LuckPerms
+softdepend:
+  - PlaceholderAPI
+
+commands:
+  vexity:
+    description: "Main command"
+    aliases: [vex, vexitychat]
