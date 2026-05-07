@@ -54,12 +54,13 @@ public class Main extends JavaPlugin implements Listener {
         // Регистрируем Paper listener (1.19+) если доступен, иначе legacy
         boolean paperChat = false;
         try {
-            Class.forName("io.papermc.paper.event.player.AsyncChatEvent");
-            getServer().getPluginManager().registerEvents(
-                new so.max1soft.vexitychat.listeners.PaperChatListener(chatListener), this);
+            Class<?> asyncChatEventClass = Class.forName("io.papermc.paper.event.player.AsyncChatEvent");
+            Class<?> paperListenerClass = Class.forName("so.max1soft.vexitychat.listeners.PaperChatListener");
+            Object paperListener = paperListenerClass.getConstructor(ChatListener.class).newInstance(chatListener);
+            getServer().getPluginManager().registerEvents((Listener) paperListener, this);
             paperChat = true;
             getLogger().info("[VexityChat] Используется Paper chat API (1.19+)");
-        } catch (ClassNotFoundException ignored) {}
+        } catch (ClassNotFoundException | NoSuchMethodException | InstantiationException | IllegalAccessException | java.lang.reflect.InvocationTargetException ignored) {}
 
         if (!paperChat) {
             getServer().getPluginManager().registerEvents(chatListener, this);
