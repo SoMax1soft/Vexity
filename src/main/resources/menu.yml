@@ -1,0 +1,191 @@
+reports:
+  size: 54
+  title: "&8Vexity Reports &7- {selected_category}"
+  player-title: "&8Нарушения: &f{player}"
+  loading-title: "&8Vexity Reports"
+  date-format: "dd.MM.yyyy HH:mm"
+  message-preview-length: 90
+  # false is safer for large report lists on older servers. Set true if you want real player skins in the GUI.
+  use-player-heads: false
+  selected-text: "&aвыбрано"
+  all-categories-text: "Все классы"
+
+  sort-names:
+    latest: "Сначала новые"
+    oldest: "Сначала старые"
+    most: "Больше нарушений"
+    name: "Имя A-Z"
+
+  content-slots:
+    - 10
+    - 11
+    - 12
+    - 13
+    - 14
+    - 15
+    - 16
+    - 19
+    - 20
+    - 21
+    - 22
+    - 23
+    - 24
+    - 25
+    - 28
+    - 29
+    - 30
+    - 31
+    - 32
+    - 33
+    - 34
+
+  items:
+    filler:
+      enabled: true
+      material: "BLACK_STAINED_GLASS_PANE"
+      name: " "
+      lore: []
+
+    loading:
+      slot: 22
+      material: "CLOCK"
+      name: "&bЗагрузка репортов..."
+      lore:
+        - "&7Данные готовятся асинхронно."
+
+    empty:
+      slot: 22
+      material: "BARRIER"
+      name: "&cРепорты не найдены"
+      lore:
+        - "&7Попробуйте другой класс или сортировку."
+
+    player:
+      material: "PLAYER_HEAD"
+      name: "&c{player}"
+      lore:
+        - "&7Всего нарушений: &f{total}"
+        - "&7Последнее правило: &c{latest_rule}"
+        - "&7Последний класс: &c{latest_category_name}"
+        - "&7Время: &f{latest_time}"
+        - ""
+        - "&7По классам:"
+        - "&f{category_counts}"
+        - ""
+        - "&8Последнее сообщение:"
+        - "&f{latest_message}"
+        - ""
+        - "&eНажмите, чтобы открыть сообщения"
+
+    report:
+      material: "PAPER"
+      name: "&cПравило {rule} &8#&7{id}"
+      lore:
+        - "&7Класс: &c{category_name}"
+        - "&7Время: &f{time}"
+        - ""
+        - "&8Сообщение:"
+        - "&f{message}"
+
+    all-categories:
+      slot: 36
+      material: "BOOK"
+      name: "&fВсе классы"
+      lore:
+        - "&7Показать все классы нарушений."
+        - "&7Сейчас: &f{selected_category}"
+
+    previous-page:
+      slot: 46
+      material: "ARROW"
+      name: "&eНазад"
+      lore:
+        - "&7Страница &f{page}&7/&f{pages}"
+
+    sort:
+      slot: 49
+      material: "HOPPER"
+      name: "&bSort"
+      lore:
+        - "&7Сейчас: &f{sort}"
+        - "&eНажмите, чтобы сменить"
+
+    next-page:
+      slot: 52
+      material: "ARROW"
+      name: "&eВперёд"
+      lore:
+        - "&7Страница &f{page}&7/&f{pages}"
+
+    back:
+      slot: 45
+      material: "OAK_DOOR"
+      name: "&eНазад"
+      lore:
+        - "&7Вернуться к списку игроков."
+
+  category-buttons:
+    "1":
+      slot: 37
+      material: "REDSTONE"
+      display: "Оскорбление игроков"
+      name: "&cОскорбление игроков"
+      lore:
+        - "&7Класс ИИ: &f1"
+        - "{selected}"
+    "2":
+      slot: 38
+      material: "BONE"
+      display: "Оскорбление родни"
+      name: "&cОскорбление родни"
+      lore:
+        - "&7Класс ИИ: &f2"
+        - "{selected}"
+    "3":
+      slot: 39
+      material: "IRON_SWORD"
+      display: "Оскорбление staff"
+      name: "&cОскорбление staff"
+      lore:
+        - "&7Класс ИИ: &f3"
+        - "{selected}"
+    "4":
+      slot: 40
+      material: "TNT"
+      display: "Спам/Капс"
+      name: "&cСпам/Капс"
+      lore:
+        - "&7Класс ИИ: &f4"
+        - "{selected}"
+    "5":
+      slot: 41
+      material: "ANVIL"
+      display: "Оскорбление сервера"
+      name: "&cОскорбление сервера"
+      lore:
+        - "&7Класс ИИ: &f5"
+        - "{selected}"
+    "6":
+      slot: 42
+      material: "ORANGE_DYE"
+      display: "Класс 6"
+      name: "&6Класс 6"
+      lore:
+        - "&7Класс ИИ: &f6"
+        - "{selected}"
+    "7":
+      slot: 43
+      material: "YELLOW_DYE"
+      display: "Класс 7"
+      name: "&eКласс 7"
+      lore:
+        - "&7Класс ИИ: &f7"
+        - "{selected}"
+    "8":
+      slot: 44
+      material: "PURPLE_DYE"
+      display: "Класс 8"
+      name: "&dКласс 8"
+      lore:
+        - "&7Класс ИИ: &f8"
+        - "{selected}"

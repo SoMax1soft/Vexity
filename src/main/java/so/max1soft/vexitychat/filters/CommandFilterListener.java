@@ -9,24 +9,19 @@ import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.List;
+import java.util.Locale;
 
 public class CommandFilterListener implements Listener {
 
     private final ChatFilter chatFilter;
     private final ChatDelay chatDelay;
     private final List<String> commandPrefixes;
-    private final List<String> newbieCommands;
-    private final long newbieDelay;
-    private final String newbieDelayMessage;
     private final JavaPlugin plugin;
 
     public CommandFilterListener(ChatFilter chatFilter, ChatDelay chatDelay, JavaPlugin plugin) {
         this.chatFilter = chatFilter;
         this.chatDelay = chatDelay;
         this.plugin = plugin;
-        this.newbieCommands = plugin.getConfig().getStringList("newbie-commands.list");
-        this.newbieDelay = plugin.getConfig().getLong("newbie-commands.delay", 300);
-        this.newbieDelayMessage = plugin.getConfig().getString("messages.chat-delay-message", "");
         // Все варианты команд личных сообщений (включая CMI и другие плагины)
         this.commandPrefixes = List.of(
             "/m ", "/msg ", "/r ", "/reply ", "/tell ", "/w ", "/whisper ",
@@ -45,14 +40,19 @@ public class CommandFilterListener implements Listener {
 
         Player player = event.getPlayer();
         String command = event.getMessage();
+        String commandLower = command.toLowerCase(Locale.ROOT);
         boolean debug = plugin.getConfig().getBoolean("chat.debug", false);
+        boolean canChat = chatDelay.canChat(player);
 
-        if (debug) plugin.getLogger().info("[ChatDebug] Command: " + command + " | player: " + player.getName() + " | canChat: " + chatDelay.canChat(player));
+        if (debug) plugin.getLogger().info("[ChatDebug] Command: " + command + " | player: " + player.getName() + " | canChat: " + canChat);
 
         // Проверка newbie-commands
-        if (!chatDelay.canChat(player)) {
+        if (!canChat) {
+            List<String> newbieCommands = plugin.getConfig().getStringList("newbie-commands.list");
+            long newbieDelay = plugin.getConfig().getLong("newbie-commands.delay", 300);
+            String newbieDelayMessage = plugin.getConfig().getString("messages.chat-delay-message", "");
             for (String newbieCmd : newbieCommands) {
-                if (commandMatchesNewbie(command, newbieCmd)) {
+                if (commandMatchesNewbie(commandLower, newbieCmd)) {
                     long playedSeconds = chatDelay.getPlayerPlaytime(player);
                     if (debug) plugin.getLogger().info("[ChatDebug] Newbie cmd match: " + newbieCmd + " | played: " + playedSeconds + " | required: " + newbieDelay);
                     if (playedSeconds < newbieDelay) {
@@ -70,7 +70,7 @@ public class CommandFilterListener implements Listener {
 
         // Проверяем каждый префикс команды
         for (String prefix : commandPrefixes) {
-            if (command.toLowerCase().startsWith(prefix.toLowerCase())) {
+            if (commandLower.startsWith(prefix)) {
                 // Извлекаем аргументы после команды (пропускаем имя игрока для msg команд)
                 String args = command.substring(prefix.length()).trim();
                 
@@ -125,11 +125,10 @@ public class CommandFilterListener implements Listener {
             }
         }
     }
-    private boolean commandMatchesNewbie(String command, String newbieCmd) {
-        String cmd = command.toLowerCase();
-        String target = newbieCmd.toLowerCase();
+    private boolean commandMatchesNewbie(String commandLower, String newbieCmd) {
+        String target = newbieCmd.toLowerCase(Locale.ROOT);
         // Точное совпадение или команда с аргументами (target + пробел)
-        return cmd.equals(target) || cmd.startsWith(target + " ");
+        return commandLower.equals(target) || commandLower.startsWith(target + " ");
     }
 
     private String formatTime(long totalSeconds) {

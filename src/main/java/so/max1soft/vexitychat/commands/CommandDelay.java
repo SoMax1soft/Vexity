@@ -6,38 +6,43 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.entity.Player;
 import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.plugin.java.JavaPlugin;
 import net.luckperms.api.LuckPerms;
 import net.luckperms.api.model.user.User;
 
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.Locale;
 
 public class CommandDelay implements Listener {
 
-    private final FileConfiguration config;
+    private final JavaPlugin plugin;
     private final LuckPerms luckPerms;
     private final Map<String, Long> commandTimestamps = new HashMap<>();
 
-    public CommandDelay(FileConfiguration config, LuckPerms luckPerms) {
-        this.config = config;
+    public CommandDelay(JavaPlugin plugin, LuckPerms luckPerms) {
+        this.plugin = plugin;
         this.luckPerms = luckPerms;
     }
 
     @EventHandler
     public void onCommand(PlayerCommandPreprocessEvent event) {
         Player player = event.getPlayer();
-        String message = event.getMessage().toLowerCase().substring(1);
+        String message = event.getMessage().substring(1).toLowerCase(Locale.ROOT);
+        FileConfiguration config = plugin.getConfig();
 
 
         org.bukkit.configuration.ConfigurationSection delaySection = config.getConfigurationSection("command-delay");
         if (delaySection == null) return;
 
-        for (String configCommand : delaySection.getKeys(false)) {            List<String> aliases = config.getStringList("command-delay." + configCommand + ".aliases");
+        for (String configCommand : delaySection.getKeys(false)) {
+            List<String> aliases = config.getStringList("command-delay." + configCommand + ".aliases");
             if (isCommandOrAlias(message, configCommand, aliases)) {
 
                 long delay = getCooldownForPlayer(player, configCommand);
-                long lastExecuted = commandTimestamps.getOrDefault(configCommand + player.getName(), 0L);
+                String timestampKey = configCommand + ":" + player.getUniqueId();
+                long lastExecuted = commandTimestamps.getOrDefault(timestampKey, 0L);
                 long currentTime = System.currentTimeMillis();
 
 
@@ -48,13 +53,13 @@ public class CommandDelay implements Listener {
                         String finalMessage = messageTemplate.replace("{TIME}", String.valueOf(remainingTime));
                         player.sendMessage(finalMessage);
                     } else {
-                        player.sendMessage("ПЭЛЬМЕНИ С МАЙОНЕЗАМ.");
+                        player.sendMessage("Подождите " + remainingTime + " сек. перед повторным использованием команды.");
                     }
                     event.setCancelled(true);
                     return;
                 } else {
 
-                    commandTimestamps.put(configCommand + player.getName(), currentTime);
+                    commandTimestamps.put(timestampKey, currentTime);
                     break;
                 }
             }
@@ -63,11 +68,13 @@ public class CommandDelay implements Listener {
 
     private boolean isCommandOrAlias(String message, String command, List<String> aliases) {
 
-        if (message.startsWith(command.toLowerCase())) {
+        String normalizedCommand = command.toLowerCase(Locale.ROOT);
+        if (message.equals(normalizedCommand) || message.startsWith(normalizedCommand + " ")) {
             return true;
         }
         for (String alias : aliases) {
-            if (message.startsWith(alias.toLowerCase())) {
+            String normalizedAlias = alias.toLowerCase(Locale.ROOT);
+            if (message.equals(normalizedAlias) || message.startsWith(normalizedAlias + " ")) {
                 return true;
             }
         }
@@ -75,6 +82,7 @@ public class CommandDelay implements Listener {
     }
 
     private long getCooldownForPlayer(Player player, String command) {
+        FileConfiguration config = plugin.getConfig();
 
         User user = luckPerms.getUserManager().getUser(player.getUniqueId());
         if (user == null) {

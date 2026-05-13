@@ -11,45 +11,48 @@ import so.max1soft.vexitychat.filters.ChatFilter;
 import so.max1soft.vexitychat.filters.CommandFilterListener;
 import so.max1soft.vexitychat.listeners.ChatConstructor;
 import so.max1soft.vexitychat.listeners.ChatListener;
+import so.max1soft.vexitychat.menus.ReportsMenuManager;
 import so.max1soft.vexitychat.managers.AutoMessageManager;
 import so.max1soft.vexitychat.managers.PlaytimeDatabase;
+import so.max1soft.vexitychat.managers.ReportsManager;
 import so.max1soft.vexitychat.managers.VexityAIManager;
-
-import java.util.List;
+import so.max1soft.vexitychat.managers.WarningsDatabase;
 
 public class Main extends JavaPlugin implements Listener {
     private LuckPerms luckPerms;
     private ChatFilter chatFilter;
     private ChatDelay chatDelay;
     private ChatConstructor chatConstructor;
-    private List<String> hoverText;
     private VexityAIManager aiManager;
     private PlaytimeDatabase playtimeDatabase;
+    private WarningsDatabase warningsDatabase;
+    private AutoMessageManager autoMessageManager;
+    private ReportsManager reportsManager;
+    private ReportsMenuManager reportsMenuManager;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
 
         playtimeDatabase = new PlaytimeDatabase(this);
+        warningsDatabase = new WarningsDatabase(this);
+        reportsManager = new ReportsManager(this);
 
         RegisteredServiceProvider<LuckPerms> provider = getServer().getServicesManager()
                 .getRegistration(LuckPerms.class);
         if (provider != null) {
             luckPerms = provider.getProvider();
         }
-        hoverText = getConfig().getStringList("hover.lines");
 
-        long switchToAdvancedTime = getConfig().getLong("time.switch-to-advanced");
-        long chatDelayTime = getConfig().getLong("time.chat-delay");
-        chatDelay = new ChatDelay(this, switchToAdvancedTime, chatDelayTime, playtimeDatabase);
+        chatDelay = new ChatDelay(this, playtimeDatabase);
         getServer().getPluginManager().registerEvents(chatDelay, this);
-        chatFilter = new ChatFilter(this, getConfig(), chatDelay);
+        chatFilter = new ChatFilter(this, chatDelay);
 
-        chatConstructor = new ChatConstructor(getConfig(), luckPerms);
-        getServer().getPluginManager().registerEvents(new CommandDelay(getConfig(), luckPerms), this);
+        chatConstructor = new ChatConstructor(this, luckPerms);
+        getServer().getPluginManager().registerEvents(new CommandDelay(this, luckPerms), this);
         getServer().getPluginManager().registerEvents(this, this);
-        aiManager = new VexityAIManager(this);
-        ChatListener chatListener = new ChatListener(chatConstructor, chatFilter, hoverText, luckPerms, this, aiManager);
+        aiManager = new VexityAIManager(this, reportsManager, warningsDatabase);
+        ChatListener chatListener = new ChatListener(chatConstructor, chatFilter, luckPerms, this, aiManager);
 
         // Регистрируем Paper listener (1.19+) если доступен, иначе legacy
         boolean paperChat = false;
@@ -68,15 +71,27 @@ public class Main extends JavaPlugin implements Listener {
         }
         CommandFilterListener commandFilterListener = new CommandFilterListener(chatFilter, chatDelay, this);
         Bukkit.getPluginManager().registerEvents(commandFilterListener, this);
-        new AutoMessageManager(this);
+        autoMessageManager = new AutoMessageManager(this);
+        reportsMenuManager = new ReportsMenuManager(this, reportsManager);
+        Bukkit.getPluginManager().registerEvents(reportsMenuManager, this);
 
-        MainCommand mainCommand = new MainCommand(this, aiManager);
+        MainCommand mainCommand = new MainCommand(this, aiManager, reportsMenuManager);
         getCommand("vexity").setExecutor(mainCommand);
+        getCommand("vexity").setTabCompleter(mainCommand);
+    }
+
+    public void reloadRuntimeConfig() {
+        reloadConfig();
+        if (aiManager != null) aiManager.reloadConfig();
+        if (autoMessageManager != null) autoMessageManager.reload();
+        if (reportsMenuManager != null) reportsMenuManager.reload();
     }
 
     @Override
     public void onDisable() {
         if (chatDelay != null) chatDelay.saveAll();
+        if (reportsManager != null) reportsManager.close();
+        if (warningsDatabase != null) warningsDatabase.close();
         if (playtimeDatabase != null) playtimeDatabase.close();
     }
 

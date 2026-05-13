@@ -1,43 +1,47 @@
 package so.max1soft.vexitychat.filters;
 
-import net.md_5.bungee.api.chat.ClickEvent;
-import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.ChatColor;
-import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class ChatFilter {
 
-    private final String chatDelayMessage;
-    private final String advancedDelayMessage;
     private final ChatDelay chatDelay;
     private final JavaPlugin plugin;
-    private final boolean debug;
-    private final boolean linksEnabled;
-    private final List<String> linkWhitelist;
-    private final String linkMessage;
     // Скомпилированные паттерны — один раз при создании
     private static final Pattern URL_PATTERN = Pattern.compile("(?i)(https?://)?([\\w-]+\\.)+[\\w-]+(/[\\w-./?%&=]*)?");
-    private static final Pattern CLICKABLE_URL_PATTERN = Pattern.compile("(https?://\\S+)");
 
-    public ChatFilter(JavaPlugin plugin, FileConfiguration config, ChatDelay chatDelay) {
+    public ChatFilter(JavaPlugin plugin, ChatDelay chatDelay) {
         this.plugin = plugin;
-        this.chatDelayMessage = config.getString("messages.chat-delay-message", "");
-        this.advancedDelayMessage = config.getString("messages.advanced-delay-message", "");
         this.chatDelay = chatDelay;
-        this.debug = config.getBoolean("chat.debug", false);
-        this.linksEnabled = config.getBoolean("links.enabled", false);
-        this.linkWhitelist = config.getStringList("links.whitelist");
-        this.linkMessage = config.getString("links.message", "");
     }
 
     public ChatDelay getChatDelay() {
         return chatDelay;
+    }
+
+    public boolean isLinkAllowedForChat(Player player, String message) {
+        if (player == null) {
+            plugin.getLogger().warning("Игрок равен null в методе isLinkAllowedForChat.");
+            return false;
+        }
+
+        if (player.hasPermission("vexity.bypass") || message.startsWith("/")) return true;
+
+        if (!isLinkAllowed(player, message)) {
+            String linkMessage = plugin.getConfig().getString("links.message", "");
+            if (!linkMessage.isEmpty()) {
+                player.sendMessage(ChatColor.translateAlternateColorCodes('&', linkMessage));
+            }
+            return false;
+        }
+
+        return true;
     }
 
     public String filterMessage(Player player, String message) {
@@ -46,15 +50,18 @@ public class ChatFilter {
             return null;
         }
 
-        boolean debug = this.debug;
-        if (debug) plugin.getLogger().info("[ChatDebug] filterMessage: '" + message + "' | bypass: " + player.hasPermission("vexity.bypass") + " | canChat: " + chatDelay.canChat(player));
+        boolean debug = plugin.getConfig().getBoolean("chat.debug", false);
+        boolean bypass = player.hasPermission("vexity.bypass");
+        boolean canChat = bypass || chatDelay.canChat(player);
+        if (debug) plugin.getLogger().info("[ChatDebug] filterMessage: '" + message + "' | bypass: " + bypass + " | canChat: " + canChat);
 
-        if (player.hasPermission("vexity.bypass")) return message;
+        if (bypass) return message;
         if (message.startsWith("/")) return message;
 
-        if (!chatDelay.canChat(player)) {
+        if (!canChat) {
             long chatDelayTime = chatDelay.getChatDelayTime();
             if (debug) plugin.getLogger().info("[ChatDebug] Blocked by canChat, delay: " + chatDelayTime);
+            String chatDelayMessage = plugin.getConfig().getString("messages.chat-delay-message", "");
             player.sendMessage(ChatColor.translateAlternateColorCodes('&',
                     chatDelayMessage.replace("{MINUTES}", formatTime(chatDelayTime))));
             return null;
@@ -68,6 +75,7 @@ public class ChatFilter {
         if (hasDisallowedSymbols) {
             long remainingTime = chatDelay.getADelayTime() - playtime;
             if (remainingTime > 0) {
+                String advancedDelayMessage = plugin.getConfig().getString("messages.advanced-delay-message", "");
                 player.sendMessage(ChatColor.translateAlternateColorCodes('&',
                         advancedDelayMessage.replace("{TIME}", formatTime(remainingTime))));
                 return null;
@@ -75,6 +83,7 @@ public class ChatFilter {
         }
 
         if (!isLinkAllowed(player, message)) {
+            String linkMessage = plugin.getConfig().getString("links.message", "");
             if (!linkMessage.isEmpty()) {
                 player.sendMessage(ChatColor.translateAlternateColorCodes('&', linkMessage));
             }
@@ -82,43 +91,27 @@ public class ChatFilter {
         }
 
         String filteredMessage = filterAllowedSymbols(message, allowedSymbols);
-        sendClickableMessage(player, filteredMessage);
         return filteredMessage;
     }
 
     private boolean isLinkAllowed(Player player, String message) {
         if (player.hasPermission("vexity.bypass")) return true;
-        if (!linksEnabled) return true;
+        if (!plugin.getConfig().getBoolean("links.enabled", false)) return true;
 
+        List<String> whitelist = plugin.getConfig().getStringList("links.whitelist");
         Matcher matcher = URL_PATTERN.matcher(message);
         while (matcher.find()) {
-            String url = matcher.group().toLowerCase();
-            boolean whitelisted = linkWhitelist.stream().anyMatch(a -> url.contains(a.toLowerCase()));
+            String url = matcher.group().toLowerCase(Locale.ROOT);
+            boolean whitelisted = false;
+            for (String allowed : whitelist) {
+                if (url.contains(allowed.toLowerCase(Locale.ROOT))) {
+                    whitelisted = true;
+                    break;
+                }
+            }
             if (!whitelisted) return false;
         }
         return true;
-    }
-
-    private void sendClickableMessage(Player player, String message) {
-        Matcher matcher = CLICKABLE_URL_PATTERN.matcher(message);
-        TextComponent textComponent = new TextComponent("");
-        int lastMatchEnd = 0;
-
-        while (matcher.find()) {
-            if (matcher.start() > lastMatchEnd) {
-                textComponent.addExtra(new TextComponent(message.substring(lastMatchEnd, matcher.start())));
-            }
-            String url = matcher.group();
-            TextComponent linkComponent = new TextComponent(url);
-            linkComponent.setColor(net.md_5.bungee.api.ChatColor.BLUE);
-            linkComponent.setUnderlined(true);
-            linkComponent.setClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, url));
-            textComponent.addExtra(linkComponent);
-            lastMatchEnd = matcher.end();
-        }
-        if (lastMatchEnd < message.length()) {
-            textComponent.addExtra(new TextComponent(message.substring(lastMatchEnd)));
-        }
     }
 
     private String filterAllowedSymbols(String message, String allowedSymbols) {

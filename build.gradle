@@ -1,0 +1,152 @@
+plugins {
+    id 'java'
+    id 'com.gradleup.shadow' version '9.2.2'
+}
+
+group = 'so.max1soft.vexitychat'
+version = 'v1'
+
+def pluginName = 'VexityChat'
+def h2Relocation = 'so.max1soft.vexitychat.libs.h2'
+
+repositories {
+    mavenCentral()
+    maven {
+        name = 'placeholderapi'
+        url = uri('https://repo.extendedclip.com/content/repositories/placeholderapi/')
+    }
+    maven {
+        name = 'jitpack'
+        url = uri('https://jitpack.io')
+    }
+    maven {
+        name = 'spigot'
+        url = uri('https://hub.spigotmc.org/nexus/content/repositories/snapshots/')
+    }
+    maven {
+        name = 'papermc'
+        url = uri('https://repo.papermc.io/repository/maven-public/')
+    }
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+sourceSets {
+    main {
+        java.setSrcDirs([])
+        resources.setSrcDirs([])
+    }
+    java17 {
+        java.setSrcDirs(['src/main/java', 'src/main/java-paper'])
+        resources.setSrcDirs(['src/main/resources'])
+    }
+    java21 {
+        java.setSrcDirs(['src/main/java', 'src/main/java-paper'])
+        resources.setSrcDirs(['src/main/resources'])
+    }
+}
+
+configurations {
+    commonCompileOnly {
+        canBeConsumed = false
+        canBeResolved = false
+    }
+    shaded {
+        canBeConsumed = false
+        canBeResolved = false
+    }
+
+    java17CompileOnly.extendsFrom commonCompileOnly
+    java21CompileOnly.extendsFrom commonCompileOnly
+    java17Implementation.extendsFrom shaded
+    java21Implementation.extendsFrom shaded
+}
+
+dependencies {
+    commonCompileOnly 'me.clip:placeholderapi:2.11.6'
+    commonCompileOnly 'net.luckperms:api:5.4'
+
+    shaded 'com.h2database:h2:2.2.224'
+
+    java17CompileOnly 'io.papermc.paper:paper-api:1.20.4-R0.1-SNAPSHOT'
+
+    java21CompileOnly 'io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+tasks.named('compileJava17Java', JavaCompile) {
+    javaCompiler = javaToolchains.compilerFor {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+    options.release = 17
+}
+
+tasks.named('compileJava21Java', JavaCompile) {
+    javaCompiler = javaToolchains.compilerFor {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+    options.release = 21
+}
+
+tasks.named('jar') {
+    enabled = false
+}
+
+tasks.named('shadowJar') {
+    enabled = false
+}
+
+def configurePluginJar = { TaskProvider taskProvider, String sourceSetName, String classifier ->
+    taskProvider.configure {
+        group = LifecycleBasePlugin.BUILD_GROUP
+        description = "Builds ${pluginName} shaded plugin jar for ${classifier}."
+
+        archiveBaseName = pluginName
+        archiveVersion = ''
+        archiveClassifier = classifier
+
+        from sourceSets.named(sourceSetName).map { it.output }
+        configurations = project.configurations.named("${sourceSetName}RuntimeClasspath").map { [it] }
+
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        relocate 'org.h2', h2Relocation
+        exclude 'META-INF/*.SF',
+                'META-INF/*.DSA',
+                'META-INF/*.RSA',
+                'META-INF/MANIFEST.MF',
+                'module-info.class'
+    }
+}
+
+def shadowJarJava17 = tasks.register('shadowJarJava17', com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar)
+configurePluginJar(shadowJarJava17, 'java17', 'java17')
+
+def shadowJarJava21 = tasks.register('shadowJarJava21', com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar)
+configurePluginJar(shadowJarJava21, 'java21', 'java21')
+
+def buildJava17 = tasks.register('buildJava17') {
+    group = LifecycleBasePlugin.BUILD_GROUP
+    description = 'Builds the Java 17 plugin artifact.'
+    dependsOn shadowJarJava17
+}
+
+def buildJava21 = tasks.register('buildJava21') {
+    group = LifecycleBasePlugin.BUILD_GROUP
+    description = 'Builds the Java 21 plugin artifact.'
+    dependsOn shadowJarJava21
+}
+
+tasks.named('assemble') {
+    dependsOn shadowJarJava17, shadowJarJava21
+}
+
+tasks.named('build') {
+    dependsOn buildJava17, buildJava21
+}

@@ -2,35 +2,42 @@ package so.max1soft.vexitychat.listeners;
 
 import me.clip.placeholderapi.PlaceholderAPI;
 import net.luckperms.api.LuckPerms;
-import net.luckperms.api.model.user.User;
-import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.entity.Player;
 import org.bukkit.Bukkit;
+import net.luckperms.api.model.user.User;
+import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
+
+import java.util.regex.Pattern;
 
 public class ChatConstructor {
 
-    private final FileConfiguration config;
-    private final LuckPerms luckPerms;
+    private static final Pattern ANIMATION_PATTERN = Pattern.compile("%animation:([^%]+)%");
 
-    public ChatConstructor(FileConfiguration config, LuckPerms luckPerms) {
-        this.config = config;
+    private final JavaPlugin plugin;
+    private final LuckPerms luckPerms;
+    private final boolean papiAvailable;
+
+    public ChatConstructor(JavaPlugin plugin, LuckPerms luckPerms) {
+        this.plugin = plugin;
         this.luckPerms = luckPerms;
+        this.papiAvailable = Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null;
     }
 
     public String constructLocalMessage(Player player, String message) {
-        String format = config.getString("chat.local");
+        String format = plugin.getConfig().getString("chat.local");
         return replacePlaceholders(format, player, message);
     }
 
     public String constructGlobalMessage(Player player, String message) {
-        String format = config.getString("chat.global");
+        String format = plugin.getConfig().getString("chat.global");
         return replacePlaceholders(format, player, message);
     }
 
     public int getBlockRadius() {
-        return config.getInt("chat.block-radius");
+        return plugin.getConfig().getInt("chat.block-radius");
     }
     private String replacePlaceholders(String format, Player player, String message) {
+        if (format == null) format = "";
         User user = luckPerms.getUserManager().getUser(player.getUniqueId());
         String prefix = user != null ? user.getCachedData().getMetaData().getPrefix() : "";
         String suffix = user != null ? user.getCachedData().getMetaData().getSuffix() : "";
@@ -42,9 +49,11 @@ public class ChatConstructor {
                 .replace("{SUFFIX}", suffix != null ? suffix : "");
 
         // Автоматическая замена %animation:name% на PAPI-совместимый %tab_placeholder_animation:name%
-        format = format.replaceAll("%animation:([^%]+)%", "%tab_placeholder_animation:$1%");
+        format = ANIMATION_PATTERN.matcher(format).replaceAll("%tab_placeholder_animation:$1%");
 
-        format = PlaceholderAPI.setPlaceholders(player, format);
+        if (papiAvailable) {
+            format = PlaceholderAPI.setPlaceholders(player, format);
+        }
 
         return format;
     }

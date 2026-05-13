@@ -5,6 +5,7 @@ import org.bukkit.ChatColor;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.scheduler.BukkitTask;
 import so.max1soft.vexitychat.utils.ColorUtil;
 
 import java.util.ArrayList;
@@ -21,6 +22,7 @@ public class AutoMessageManager {
     private int interval;
     private int currentIndex = 0;
     private final Random rand = new Random();
+    private BukkitTask task;
 
     public AutoMessageManager(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -31,6 +33,7 @@ public class AutoMessageManager {
     }
 
     private void loadConfig() {
+        messages.clear();
         ConfigurationSection section = plugin.getConfig().getConfigurationSection("autoMessage");
         if (section == null) return;
 
@@ -50,7 +53,7 @@ public class AutoMessageManager {
     }
 
     private void startTask() {
-        new BukkitRunnable() {
+        task = new BukkitRunnable() {
             @Override
             public void run() {
                 if (!enabled || messages.isEmpty()) return;
@@ -68,5 +71,17 @@ public class AutoMessageManager {
                 }
             }
         }.runTaskTimer(plugin, interval * 20L, interval * 20L);
+    }
+
+    public void reload() {
+        if (task != null) {
+            task.cancel();
+            task = null;
+        }
+        currentIndex = 0;
+        loadConfig();
+        if (enabled && !messages.isEmpty()) {
+            startTask();
+        }
     }
 }

@@ -114,6 +114,13 @@ public class PlaytimeDatabase {
     public void close() {
         scheduler.shutdown();
         try {
+            if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                plugin.getLogger().warning("[PlaytimeDB] Не все задачи сохранения успели завершиться за 5 секунд.");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        try {
             if (connection != null && !connection.isClosed()) connection.close();
         } catch (SQLException ignored) {}
     }

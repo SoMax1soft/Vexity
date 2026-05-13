@@ -12,17 +12,23 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 
 public class VexityAIManager {
+
+    private static final int MAX_SIMILARITY_COMPARE_LENGTH = 256;
 
     private final JavaPlugin plugin;
     private String apiUrl;
     private String licenseKey;
     private boolean debug;
     private final HttpClient httpClient;
+    private final ReportsManager reportsManager;
+    private final WarningsDatabase warningsDatabase;
 
     private volatile String sessionToken;
     private final java.util.concurrent.atomic.AtomicBoolean acquiring =
@@ -33,41 +39,16 @@ public class VexityAIManager {
     private final java.util.concurrent.atomic.AtomicBoolean reconnectScheduled =
             new java.util.concurrent.atomic.AtomicBoolean(false);
 
+    private final Map<UUID, String> lastMessages = new ConcurrentHashMap<>();
 
-
-    private final java.io.File warningsFile;
-    private org.bukkit.configuration.file.YamlConfiguration warningsConfig;
-
-    private final Map<UUID, String> lastMessages = new HashMap<>();
-
-    public VexityAIManager(JavaPlugin plugin) {
+    public VexityAIManager(JavaPlugin plugin, ReportsManager reportsManager, WarningsDatabase warningsDatabase) {
         this.plugin = plugin;
-        this.warningsFile = new java.io.File(plugin.getDataFolder(), "warnings.yml");
-        loadWarnings();
+        this.reportsManager = reportsManager;
+        this.warningsDatabase = warningsDatabase;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .build();
         reloadConfig();
-    }
-
-    private void loadWarnings() {
-        if (!warningsFile.exists()) {
-            try {
-                plugin.getDataFolder().mkdirs();
-                warningsFile.createNewFile();
-            } catch (java.io.IOException e) {
-                plugin.getLogger().severe("Could not create warnings.yml!");
-            }
-        }
-        this.warningsConfig = org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(warningsFile);
-    }
-
-    private void saveWarnings() {
-        try {
-            warningsConfig.save(warningsFile);
-        } catch (java.io.IOException e) {
-            plugin.getLogger().severe("Could not save warnings.yml!");
-        }
     }
 
     public void reloadConfig() {
@@ -199,7 +180,7 @@ public class VexityAIManager {
                         backendAvailable = true;
                         plugin.getLogger().info("[Vexity-AI] Связь с бэкендом восстановлена.");
                     }
-                    processAIResponse(player, resp.body());
+                    processAIResponse(player, message, resp.body());
                 })
                 .exceptionally(ex -> {
                     if (debug) plugin.getLogger().warning("[Vexity-AI Debug] Ошибка связи с ИИ: " + ex.getMessage());
@@ -226,7 +207,7 @@ public class VexityAIManager {
         }, 200L); // 200 ticks = 10 сек
     }
 
-    private void processAIResponse(Player player, String responseBody) {
+    private void processAIResponse(Player player, String originalMessage, String responseBody) {
         if (debug) plugin.getLogger().info("[Vexity-AI Debug] Получен ответ от ИИ: " + responseBody);
         try {
             JsonObject response = new JsonParser().parse(responseBody).getAsJsonObject();
@@ -236,13 +217,17 @@ public class VexityAIManager {
                 
                 if (debug) plugin.getLogger().info("[Vexity-AI Debug] ИИ нашел нарушение! Категория: " + categoryStr);
                 
-    
                 String path = "vexityai.progressive.rules." + categoryStr;
-                if (plugin.getConfig().contains(path)) {
-                    Bukkit.getScheduler().runTask(plugin, () -> executePunishment(player, categoryStr));
-                } else {
-                    if (debug) plugin.getLogger().warning("[Vexity-AI Debug] В конфиге нет настроек для категории " + categoryStr);
-                }
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!player.isOnline()) return;
+                    String ruleDisplayId = plugin.getConfig().getString(path + ".rule-id", categoryStr);
+                    reportsManager.recordViolation(player, originalMessage, categoryStr, ruleDisplayId);
+                    if (plugin.getConfig().contains(path)) {
+                        executePunishment(player, categoryStr);
+                    } else {
+                        if (debug) plugin.getLogger().warning("[Vexity-AI Debug] В конфиге нет настроек для категории " + categoryStr);
+                    }
+                });
             } else {
                 if (debug) plugin.getLogger().info("[Vexity-AI Debug] Нарушений не обнаружено.");
             }
@@ -254,11 +239,26 @@ public class VexityAIManager {
     private void executePunishment(Player player, String categoryId) {
         String path = "vexityai.progressive.rules." + categoryId;
         String ruleDisplayId = plugin.getConfig().getString(path + ".rule-id", categoryId);
-        
+        long expireMillis = parseTime(plugin.getConfig().getString("vexityai.progressive.expire-time", "24h"));
+        int maxWarnings = plugin.getConfig().getInt(path + ".max-warnings", 1);
+
         if (debug) plugin.getLogger().info("[Vexity-AI Debug] Выполнение наказания для " + player.getName() + " по правилу " + ruleDisplayId);
-        
-        ProgressiveResult result = handleProgressive(player, categoryId, ruleDisplayId);
-        
+
+        warningsDatabase.registerWarningAsync(player.getUniqueId(), categoryId, expireMillis, maxWarnings)
+                .thenAccept(progress -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!player.isOnline()) return;
+                    ProgressiveResult result = createProgressiveResult(player, categoryId, ruleDisplayId, progress);
+                    finishPunishment(player, categoryId, ruleDisplayId, result);
+                }))
+                .exceptionally(ex -> {
+                    plugin.getLogger().warning("[WarningsDB] Не удалось зарегистрировать варн: " + ex.getMessage());
+                    return null;
+                });
+    }
+
+    private void finishPunishment(Player player, String categoryId, String ruleDisplayId, ProgressiveResult result) {
+        notifyStaffWarning(player, categoryId, ruleDisplayId, result);
+
         if (result.command != null && !result.command.isEmpty()) {
             if (result.command.startsWith("{NOTIFY}")) {
                 String message = result.command.replace("{NOTIFY}", "").trim();
@@ -277,7 +277,7 @@ public class VexityAIManager {
                             notifyMsg.replace("{player}", player.getName()).replace("{rule}", ruleDisplayId));
                         
                         for (Player onlinePlayer : Bukkit.getOnlinePlayers()) {
-                            if (onlinePlayer.hasPermission("vexity.ai.notify")) {
+                            if (onlinePlayer.hasPermission("vexity.staff")) {
                                 onlinePlayer.sendMessage(formattedMsg);
                             }
                         }
@@ -291,34 +291,34 @@ public class VexityAIManager {
         }
     }
 
-    private ProgressiveResult handleProgressive(Player player, String categoryId, String ruleId) {
-        String uuid = player.getUniqueId().toString();
-        String path = "players." + uuid + "." + categoryId;
-        
-        int count = warningsConfig.getInt(path + ".count", 0);
-        long lastViolation = warningsConfig.getLong(path + ".last", 0);
-        long now = System.currentTimeMillis();
-        
-        long expireMillis = parseTime(plugin.getConfig().getString("vexityai.progressive.expire-time", "24h"));
-        if (now - lastViolation > expireMillis) {
-            if (debug) plugin.getLogger().info("[Vexity-AI Debug] Варны игрока истекли, сбрасываем.");
-            count = 0;
+    private void notifyStaffWarning(Player player, String categoryId, String ruleDisplayId, ProgressiveResult result) {
+        String warningMsg = plugin.getConfig().getString("vexityai.staff-warning-message");
+        if (warningMsg == null || warningMsg.isEmpty()) return;
+
+        String formattedMsg = ChatColor.translateAlternateColorCodes('&',
+                warningMsg.replace("{player}", player.getName())
+                        .replace("{rule}", ruleDisplayId)
+                        .replace("{category}", categoryId)
+                        .replace("{warning}", String.valueOf(result.warningCount))
+                        .replace("{max_warnings}", String.valueOf(result.maxWarnings)));
+
+        for (Player onlinePlayer : Bukkit.getOnlinePlayers()) {
+            if (onlinePlayer.hasPermission("vexity.staff")) {
+                onlinePlayer.sendMessage(formattedMsg);
+            }
         }
 
-        int maxWarnings = plugin.getConfig().getInt("vexityai.progressive.rules." + categoryId + ".max-warnings", 1);
-        count++;
-        
-        boolean isFinalWarning = (count >= maxWarnings);
-        
-        if (isFinalWarning) {
-            if (debug) plugin.getLogger().info("[Vexity-AI Debug] Достигнут максимум варнов (" + maxWarnings + "). Сбрасываем историю для " + player.getName());
-            warningsConfig.set(path + ".count", 0);
-        } else {
-            warningsConfig.set(path + ".count", count);
+        if (debug) plugin.getLogger().info("[Vexity-AI Debug] Отправлено уведомление staff о варне.");
+    }
+
+    private ProgressiveResult createProgressiveResult(Player player, String categoryId, String ruleId, WarningsDatabase.WarningProgress progress) {
+        int count = progress.getCount();
+        int maxWarnings = progress.getMaxWarnings();
+        boolean isFinalWarning = progress.isFinalWarning();
+
+        if (isFinalWarning && debug) {
+            plugin.getLogger().info("[Vexity-AI Debug] Достигнут максимум варнов (" + maxWarnings + "). Сбрасываем историю для " + player.getName());
         }
-        
-        warningsConfig.set(path + ".last", now);
-        saveWarnings();
 
         if (debug) plugin.getLogger().info("[Vexity-AI Debug] Игрок " + player.getName() + " получил варн №" + count + " за категорию " + categoryId);
 
@@ -332,47 +332,54 @@ public class VexityAIManager {
         
         if (debug) plugin.getLogger().info("[Vexity-AI Debug] Команда для выполнения: " + cmd);
         
-        return new ProgressiveResult(cmd, isFinalWarning);
+        return new ProgressiveResult(cmd, isFinalWarning, count, maxWarnings);
     }
     
 
     private static class ProgressiveResult {
         final String command;
         final boolean isFinalWarning;
+        final int warningCount;
+        final int maxWarnings;
         
-        ProgressiveResult(String command, boolean isFinalWarning) {
+        ProgressiveResult(String command, boolean isFinalWarning, int warningCount, int maxWarnings) {
             this.command = command;
             this.isFinalWarning = isFinalWarning;
+            this.warningCount = warningCount;
+            this.maxWarnings = maxWarnings;
         }
     }
 
     private boolean checkRule25(Player player, String message) {
-        if (!plugin.getConfig().getBoolean("vexityai.anti-caps.enabled", true) && 
-            !plugin.getConfig().getBoolean("vexityai.anti-flood.enabled", true)) return false;
+        boolean antiCapsEnabled = plugin.getConfig().getBoolean("vexityai.anti-caps.enabled", true);
+        boolean antiFloodEnabled = plugin.getConfig().getBoolean("vexityai.anti-flood.enabled", true);
+        if (!antiCapsEnabled && !antiFloodEnabled) return false;
 
         boolean violated = false;
         
    
-        if (plugin.getConfig().getBoolean("vexityai.anti-caps.enabled", true)) {
+        if (antiCapsEnabled) {
             int minLen = plugin.getConfig().getInt("vexityai.anti-caps.min-length", 5);
-            if (message.length() >= minLen) {
-                long upper = message.chars().filter(Character::isUpperCase).count();
-                double percent = (double) upper / message.length() * 100;
+            long letterCount = message.chars().filter(Character::isLetter).count();
+            if (letterCount >= minLen) {
+                long upper = message.chars().filter(c -> Character.isLetter(c) && Character.isUpperCase(c)).count();
+                double percent = (double) upper / letterCount * 100;
                 if (debug && percent > 30) plugin.getLogger().info("[Vexity-AI Debug] Проверка капса: " + String.format("%.1f", percent) + "%");
                 if (percent >= plugin.getConfig().getInt("vexityai.anti-caps.percent", 70)) violated = true;
             }
         }
 
 
-        if (!violated && plugin.getConfig().getBoolean("vexityai.anti-flood.enabled", true)) {
+        if (!violated && antiFloodEnabled) {
             int maxRepeat = plugin.getConfig().getInt("vexityai.anti-flood.max-repeating-chars", 4);
+            String compactMessage = removeWhitespace(message);
             int count = 1;
-            for (int i = 1; i < message.length(); i++) {
-                if (message.charAt(i) == message.charAt(i - 1)) {
+            for (int i = 1; i < compactMessage.length(); i++) {
+                if (compactMessage.charAt(i) == compactMessage.charAt(i - 1)) {
                     count++;
                     if (count > maxRepeat) {
                         violated = true;
-                        if (debug) plugin.getLogger().info("[Vexity-AI Debug] Флуд символами: '" + message.charAt(i) + "' повторился " + count + " раз.");
+                        if (debug) plugin.getLogger().info("[Vexity-AI Debug] Флуд символами: '" + compactMessage.charAt(i) + "' повторился " + count + " раз.");
                         break;
                     }
                 } else count = 1;
@@ -380,7 +387,7 @@ public class VexityAIManager {
         }
 
 
-        if (!violated && plugin.getConfig().getBoolean("vexityai.anti-flood.enabled", true)) {
+        if (!violated && antiFloodEnabled) {
             String lastMsg = lastMessages.get(player.getUniqueId());
             if (lastMsg != null) {
                 double similarity = calculateSimilarity(message, lastMsg);
@@ -392,13 +399,35 @@ public class VexityAIManager {
         }
 
         if (violated) {
-            Bukkit.getScheduler().runTask(plugin, () -> executePunishment(player, "4"));
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                String ruleDisplayId = plugin.getConfig().getString("vexityai.progressive.rules.4.rule-id", "4");
+                reportsManager.recordViolation(player, message, "4", ruleDisplayId);
+                executePunishment(player, "4");
+            });
             return true;
         }
         return false;
     }
 
+    private String removeWhitespace(String message) {
+        StringBuilder result = new StringBuilder(message.length());
+        for (int i = 0; i < message.length(); i++) {
+            char c = message.charAt(i);
+            if (!Character.isWhitespace(c)) {
+                result.append(c);
+            }
+        }
+        return result.toString();
+    }
+
     private double calculateSimilarity(String s1, String s2) {
+        if (s1.equalsIgnoreCase(s2)) return 1.0;
+        if (s1.length() > MAX_SIMILARITY_COMPARE_LENGTH) {
+            s1 = s1.substring(0, MAX_SIMILARITY_COMPARE_LENGTH);
+        }
+        if (s2.length() > MAX_SIMILARITY_COMPARE_LENGTH) {
+            s2 = s2.substring(0, MAX_SIMILARITY_COMPARE_LENGTH);
+        }
         String longer = s1, shorter = s2;
         if (s1.length() < s2.length()) {
             longer = s2; shorter = s1;
@@ -409,7 +438,8 @@ public class VexityAIManager {
     }
 
     private int editDistance(String s1, String s2) {
-        s1 = s1.toLowerCase(); s2 = s2.toLowerCase();
+        s1 = s1.toLowerCase(Locale.ROOT);
+        s2 = s2.toLowerCase(Locale.ROOT);
         int[] costs = new int[s2.length() + 1];
         for (int i = 0; i <= s1.length(); i++) {
             int lastValue = i;
@@ -432,10 +462,10 @@ public class VexityAIManager {
 
     private long parseTime(String time) {
         try {
-            if (time.endsWith("h")) return Long.parseLong(time.replace("h", "")) * 3600000L;
-            if (time.endsWith("m")) return Long.parseLong(time.replace("m", "")) * 60000L;
-            if (time.endsWith("s")) return Long.parseLong(time.replace("s", "")) * 1000L;
-            if (time.endsWith("d")) return Long.parseLong(time.replace("d", "")) * 86400000L;
+            if (time.endsWith("h")) return Long.parseLong(time.substring(0, time.length() - 1)) * 3600000L;
+            if (time.endsWith("m")) return Long.parseLong(time.substring(0, time.length() - 1)) * 60000L;
+            if (time.endsWith("s")) return Long.parseLong(time.substring(0, time.length() - 1)) * 1000L;
+            if (time.endsWith("d")) return Long.parseLong(time.substring(0, time.length() - 1)) * 86400000L;
             return Long.parseLong(time);
         } catch (Exception e) {
             return 86400000L;
@@ -445,7 +475,9 @@ public class VexityAIManager {
     private String anonymizeMessage(String message) {
         String result = message;
         for (Player onlinePlayer : Bukkit.getOnlinePlayers()) {
-            result = result.replaceAll("(?i)\\b" + onlinePlayer.getName() + "\\b", "игрок");
+            result = Pattern.compile("(?i)\\b" + Pattern.quote(onlinePlayer.getName()) + "\\b")
+                    .matcher(result)
+                    .replaceAll("игрок");
         }
         return result;
     }

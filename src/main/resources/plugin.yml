@@ -13,3 +13,17 @@ commands:
   vexity:
     description: "Main command"
     aliases: [vex, vexitychat]
+
+permissions:
+  vexity.admin:
+    description: "Allows Vexity admin commands"
+    default: op
+  vexity.staff:
+    description: "Allows opening Vexity reports menu and receiving staff warnings"
+    default: op
+  vexity.bypass:
+    description: "Bypasses chat delay, link filter, allowed symbols and AI checks"
+    default: op
+  vexity.color:
+    description: "Allows color codes in chat messages"
+    default: op

@@ -9,14 +9,18 @@
 # Телеграм канал: https://t.me/vexityai
 # Сайт: Vexity.pw
 #
-# Права vexity.notify - уведомление о хуйне в сообщении
-# Права vexity.bypass -  байпас заддержки в чате
+# Права:
+# vexity.admin - /vexity reload, /vexity reinstall, /vexity ai status, /vexity ai reload
+# vexity.staff - /vexity reports и уведомления о варнах/финальных наказаниях
+# vexity.bypass - байпас задержек, фильтра ссылок, allowed-symbols и AI-проверки
+# vexity.color - разрешает цветовые коды в чате
 #
 chat:
   debug: false # Включить дебаг логи чата (CommandFilterListener, ChatFilter)
-  mode: "RESTRICTED" # DEFAULT / RESTRICTED
+  mode: "DEFAULT" # DEFAULT / RESTRICTED / SOFT
   # RESTRICTED - режим чата где используется только глобальный чат
   # DEFAULT - режим чата где используются все чаты
+  # SOFT - Vexity не форматирует чат и не применяет задержку/allowed-symbols, только проверяет ссылки и ИИ в обычном чате/Chatty/PromisedChat/других чат-плагинах
   delay:
     groups:
       default: 3 # кол-во секунд задержки
@@ -25,7 +29,7 @@ chat:
   delay-message: "&e🔥 ┃&f Вы &eслишком быстро&f пишите! Подождите еще &c {TIME} сек." # Сообщение о задержке
   local: "&e🔥 &7┃ &f{PREFIX} &f{PLAYER}{SUFFIX} &8✎&f {MESSAGE}"
   global: "&c🔥 &7┃ &f{PREFIX} &f{PLAYER}{SUFFIX} &8✎&f {MESSAGE}"
-  block-radius: 1000 # Радиус локал чата
+  block-radius: 150 # Радиус локал чата
 
 allowed-symbols:
   # Стандартные символы для новых игроков (без латиницы)
@@ -35,7 +39,7 @@ allowed-symbols:
   advanced: ' abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZёЁйцукенгшщзхъфывапролджэячсмитьбюіЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮІїЇєЄґҐ0123456789!@#$%^&*()_+-=[]{}|;:,.<>/?~`"'
 # Поддерживает плейсхолдеры PLACEHOLDERPI
 hover:
-  enabled: true # Отключить менюшку при наведении на ник в чате
+  enabled: true # Отключить ховер при наведении на ник в чате
   lines:
     - " &r"
     - " &3&n|§f Имя: &#00C1FF%player_name%"
@@ -44,6 +48,11 @@ hover:
     - " &r"
 links:
   enabled: true
+  auto-style:
+    enabled: true
+    color: "RED" # RED, BLUE, GREEN или цветовой код вроде &c
+    underline: true
+    open-on-click: true
   whitelist:
     - "https://mlsac.net" # kaif
     - "https://vexity.pw" # top
@@ -80,7 +89,7 @@ newbie-commands:
     - "/w"
     - "/tell"
 autoMessage:
-  enable: true
+  enable: false
   random: true
   messageInterval: 300
   messages:
@@ -88,11 +97,13 @@ autoMessage:
       - "&r "
       - " Автоматическое сообщение"
       - " Vexity AI - ваш ИИ модератор"
+      - " Telegram: t.me/vexityai"
       - "&r "  
     2:
       - "&r "
       - " Автоматическое сообщение"
       - " Vexity Chat - лучший плагин на чат"
+      - " Telegram: t.me/vexityai"
       - "&r "
 time:
   switch-to-advanced: 600  # Время в секундах (600 сек = 10 минут)
@@ -107,41 +118,60 @@ vexityai:
   # Лицензионный ключ. Получить в админ-панели Vexity. Без него ИИ не работает.
   license-key: "vex_dbcdab5ee65bb0a03e1dfa0979a0018c" # БЕСПЛАТНЫЙ КЛЮЧ ДЛЯ ВСЕХ КОНЧАЕТСЯ 07.06.2026
   notify-message: "&f&l[Vexity] &fИгрок &e{player} &fнарушил правило &c{rule}.&f Наказание выдано!"
+  staff-warning-message: "&f&l[Vexity] &e{player} &fполучил варн &c{warning}/{max_warnings}&f по правилу &c{rule}&f."
   
   # Прогрессивная система наказаний (варны)
   progressive:
     expire-time: "30m" # Через сколько времени сбросится счетчик нарушений
     rules:
       "1": # Категория ИИ 1 (Оск. игроков) НАЗВАНИЕ КАТЕГОРИЙ НЕ МЕНЯТЬ МОЖНО МЕНЯТЬ ТОЛЬКО RULE-ID
-        rule-id: "2.1"
+        rule-id: "Оскоребление игроков"
         max-warnings: 2
         levels:
-          1: "{NOTIFY}&f&l[Vexity] &fВы нарушили правило 2.1 - Оскорбление игроков 1/2"
-          2: "tempmute {player} &fВы нарушили правило 2.1 - Оскорбление игроков 2/2 (vexity-ai)"
+          1: "{NOTIFY}&f&l[Vexity] &fВы нарушили правило Оскорбление игроков 1/2"
+          2: "tempmute {player} &fВы нарушили правило Оскорбление игроков 2/2 (vexity-ai)"
       "2": # Категория ИИ 2 (Оск. родни) НАЗВАНИЕ КАТЕГОРИЙ НЕ МЕНЯТЬ МОЖНО МЕНЯТЬ ТОЛЬКО RULE-ID
-        rule-id: "2.2"
+        rule-id: "Оскорбление родни"
         max-warnings: 2
         levels:
-          1: "{NOTIFY}&f&l[Vexity] &fВы нарушили правило 2.2 - Оскорбление родни 1/2"
-          2: "tempmute {player} Вы нарушили правило 2.2 - Оскорбление родни 2/2 (vexity-ai)"
+          1: "{NOTIFY}&f&l[Vexity] &fВы нарушили правило Оскорбление родни 1/2"
+          2: "tempmute {player} Вы нарушили правило Оскорбление родни 2/2 (vexity-ai)"
       "3": # Категория ИИ 3 (Оск. администрации) НАЗВАНИЕ КАТЕГОРИЙ НЕ МЕНЯТЬ МОЖНО МЕНЯТЬ ТОЛЬКО RULE-ID
-        rule-id: "2.4"
+        rule-id: "Оскорбление администрации"
         max-warnings: 2
         levels:
-          1: "{NOTIFY}&f&l[Vexity] &fВы нарушили правило 2.4 - Оскорбление админов 1/2"
-          2: "tempmute {player} нарушили правило 2.4 - Оскорбление админов 2/2 (vexity-ai)"
-      "4": # Категория ИИ 4 (Спам/Капс) НАЗВАНИЕ КАТЕГОРИЙ НЕ МЕНЯТЬ МОЖНО МЕНЯТЬ ТОЛЬКО RULE-ID
-        rule-id: "2.10"
+          1: "{NOTIFY}&f&l[Vexity] &fВы нарушили правило Оскорбление администрации 1/2"
+          2: "tempmute {player} нарушили правило Оскорбление администрации 2/2 (vexity-ai)"
+      "4": # Категория НЕ ИИ 4 (Спам/Капс) НАЗВАНИЕ КАТЕГОРИЙ НЕ МЕНЯТЬ МОЖНО МЕНЯТЬ ТОЛЬКО RULE-ID
+        rule-id: "Спам/Капс"
         max-warnings: 2
         levels:
-          1: "{NOTIFY}&f&l[Vexity] &fВы нарушили правило 2.10 - СПАМ/КАПС 1/2"
-          2: "tempmute {player} нарушили правило 2.10 - СПАМ/КАПС 2/2 (vexity-local)"
+          1: "{NOTIFY}&f&l[Vexity] &fВы нарушили правило - Спам/Капс 1/2"
+          2: "tempmute {player} нарушили правило - Спам/Капс 2/2 (vexity-local)"
       "5": # Категория ИИ 5 (Оск. сервера) НАЗВАНИЕ КАТЕГОРИЙ НЕ МЕНЯТЬ МОЖНО МЕНЯТЬ ТОЛЬКО RULE-ID
-        rule-id: "2.12"
+        rule-id: "Оскорбление сервера"
         max-warnings: 2
         levels:
-          1: "{NOTIFY}&f&l[Vexity] &fВы нарушили правило 2.12 - Оскорбление сервера 1/2"
-          2: "tempmute {player} Вы нарушили правило 2.12 - Оскорбление сервера 2/2 (vexity-ai)"
+          1: "{NOTIFY}&f&l[Vexity] &fВы нарушили правило - Оскорбление сервера 1/2"
+          2: "tempmute {player} Вы нарушили правило - Оскорбление сервера 2/2 (vexity-ai)"
+      "6": # Категория ИИ 6 (Призыв к суициду) НАЗВАНИЕ КАТЕГОРИЙ НЕ МЕНЯТЬ МОЖНО МЕНЯТЬ ТОЛЬКО RULE-ID
+        rule-id: "Призыв к суициду"
+        max-warnings: 2
+        levels:
+          1: "{NOTIFY}&f&l[Vexity] &fВы нарушили правило - Призыв к суициду 1/2"
+          2: "tempmute {player} Вы нарушили правило - Призыв к суициду 2/2 (vexity-ai)"
+      "7": # Категория ИИ 7 (Разжигание межнациональной розни) НАЗВАНИЕ КАТЕГОРИЙ НЕ МЕНЯТЬ МОЖНО МЕНЯТЬ ТОЛЬКО RULE-ID
+        rule-id: "Разжигание межнациональной розни"
+        max-warnings: 2
+        levels:
+          1: "{NOTIFY}&f&l[Vexity] &fВы нарушили правило - Разжигание межнациональной розни 1/2"
+          2: "tempmute {player} Вы нарушили правило - Разжигание межнациональной розни 2/2 (vexity-ai)"
+      "8": # Категория ИИ 8 (Реклама/Продвижение серверов/читов) НАЗВАНИЕ КАТЕГОРИЙ НЕ МЕНЯТЬ МОЖНО МЕНЯТЬ ТОЛЬКО RULE-ID
+        rule-id: "Реклама/Продвижение серверов/читов"
+        max-warnings: 2
+        levels:
+          1: "{NOTIFY}&f&l[Vexity] &fВы нарушили правило - Реклама/Продвижение серверов/читов 1/2"
+          2: "tempmute {player} Вы нарушили правило - Реклама/Продвижение серверов/читов 2/2 (vexity-ai)"
   # Классический детектор (для категории 4)
   anti-caps:
     enabled: true

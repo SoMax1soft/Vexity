@@ -8,30 +8,26 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import so.max1soft.vexitychat.managers.PlaytimeDatabase;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class ChatDelay implements Listener {
 
     private final JavaPlugin plugin;
-    private final long switchToAdvancedTime;
-    private final long chatDelayTime;
     private final PlaytimeDatabase db;
     private final boolean papiAvailable;
 
     // Кэш плейтайма — обновляется раз в 30 сек чтобы не дёргать PAPI/БД на каждое сообщение
-    private final Map<UUID, Long> playtimeCache = new HashMap<>();
-    private final Map<UUID, Long> playtimeCacheTime = new HashMap<>();
+    private final Map<UUID, Long> playtimeCache = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> playtimeCacheTime = new ConcurrentHashMap<>();
     private static final long CACHE_TTL_MS = 30_000;
 
     // Время входа в текущую сессию (для подсчёта прироста)
-    private final Map<UUID, Long> sessionStart = new HashMap<>();
+    private final Map<UUID, Long> sessionStart = new ConcurrentHashMap<>();
 
-    public ChatDelay(JavaPlugin plugin, long switchToAdvancedTime, long chatDelayTime, PlaytimeDatabase db) {
+    public ChatDelay(JavaPlugin plugin, PlaytimeDatabase db) {
         this.plugin = plugin;
-        this.switchToAdvancedTime = switchToAdvancedTime;
-        this.chatDelayTime = chatDelayTime;
         this.db = db;
         this.papiAvailable = org.bukkit.Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null;
     }
@@ -72,7 +68,7 @@ public class ChatDelay implements Listener {
 
     public boolean canChat(Player player) {
         if (player == null) return false;
-        return getPlayerPlaytime(player) >= chatDelayTime;
+        return getPlayerPlaytime(player) >= getChatDelayTime();
     }
 
     public long getPlayerPlaytime(Player player) {
@@ -115,10 +111,10 @@ public class ChatDelay implements Listener {
 
     /** Версия для ChatFilter — принимает уже вычисленный плейтайм */
     public String getAllowedSymbolsForPlayer(long playtime) {
-        if (playtime >= switchToAdvancedTime) {
-            return plugin.getConfig().getString("allowed-symbols.advanced");
+        if (playtime >= getADelayTime()) {
+            return plugin.getConfig().getString("allowed-symbols.advanced", "");
         }
-        return plugin.getConfig().getString("allowed-symbols.standard");
+        return plugin.getConfig().getString("allowed-symbols.standard", "");
     }
 
     public String getAllowedSymbolsForPlayer(Player player) {
@@ -126,8 +122,8 @@ public class ChatDelay implements Listener {
         return getAllowedSymbolsForPlayer(getPlayerPlaytime(player));
     }
 
-    public long getADelayTime() { return switchToAdvancedTime; }
-    public long getChatDelayTime() { return chatDelayTime; }
+    public long getADelayTime() { return plugin.getConfig().getLong("time.switch-to-advanced"); }
+    public long getChatDelayTime() { return plugin.getConfig().getLong("time.chat-delay"); }
 
     private long parseLongOrZero(String value) {
         try {
